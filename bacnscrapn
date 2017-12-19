@@ -1,0 +1,154 @@
+#!bin/python3
+from scrapy.spiders import CrawlSpider, Rule, SitemapSpider
+from scrapy.linkextractors.lxmlhtml import LxmlLinkExtractor
+from scrapy.selector import Selector
+from scrapy.http import HtmlResponse
+from scrapy.item import Item, Field
+from scrapy.crawler import CrawlerProcess
+from scrapy.exporters import JsonItemExporter, CsvItemExporter, XmlItemExporter
+import click
+
+class bacnSettings(object):
+    output_to_file = False
+    output_formats = ('csv','json','xml')
+
+    def __init__(self, output_filename='last_crawl', output_format='csv'):
+        if output_format in self.output_formats:
+            self.output_format = output_format
+            self.output_to_file = True
+            self.output_file = output_filename
+
+class PageDetails(Item):
+    url= Field()
+    status= Field()
+    title= Field()
+    description= Field()
+    canonical= Field()
+    images= Field()
+    images_data= Field()
+    links= Field()
+    links_data = Field()
+    header1= Field()
+    header2= Field()
+    header3= Field()
+
+class OutputPipeline(object):
+
+    def open_spider(self, spider):
+        global settings
+        if settings.output_to_file:
+            self.file = open(settings.output_file, 'w+b')
+            if settings.output_format == 'json':
+                self.exporter = JsonItemExporter(self.file)
+            elif settings.output_format == 'xml':
+                self.exporter = XmlItemExporter(self.file)
+            else:
+                self.exporter = CsvItemExporter(self.file, include_headers_line=True)
+            self.exporter.fields_to_export = [
+                'url', 'status', 'title', 'description', 'header1', 'images', 'images_data',
+                'links', 'links_data', 'header2', 'header3', 'canonical'
+            ]
+            self.exporter.start_exporting()
+
+    def close_spider(self, spider):
+        global settings
+        if settings.output_to_file:
+            self.exporter.finish_exporting()
+            self.file.close()
+
+    def process_item(self, item, spider):
+        global settings
+        if settings.output_to_file:
+            self.exporter.export_item(item)
+        return item
+
+class bacnSpider(CrawlSpider):
+    name = 'bacnCrawl'
+
+    def __init__(self, start_url, allowed_domains=(), excluded_domains=(), *args, **kwargs):
+        super(bacnSpider, self).__init__(*args, **kwargs)
+        self.start_urls = [start_url]
+        self.rules = (Rule(LxmlLinkExtractor(allow=allowed_domains, deny_domains=excluded_domains), callback='parse_obj', follow=True),)
+        self._compile_rules()
+
+    def parse_obj(self, response):
+        item = PageDetails()
+        images_all = len(response.xpath('/html/body//img'))
+        images_alt = len(response.xpath('/html/body//img[@alt!=""]'))
+        item['images'] = images_all
+        item['images_data'] = '{} alt set ({:.2%})'.format(images_alt, (images_alt/images_all))
+        links_all = len(response.xpath('/html/body//a[@href]'))
+        links_title = len(response.xpath('/html/body//a[@href][@title!=""]'))
+        item['links'] = links_all
+        item['links_data'] = '{} title set ({:.2%})'.format(links_title, (links_title/links_all))
+        item['header3'] = len(response.xpath('/html/body//h3'))
+        item['header2'] = len(response.xpath('/html/body//h2'))
+        item['header1'] = len(response.xpath('/html/body//h1'))
+        item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
+        item['title'] = response.xpath('//title/text()').extract_first()
+        item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
+        item['status'] = response.status
+        item['url'] = response.url
+        return item
+
+class bacnSitemapSpider(SitemapSpider):
+
+    name = 'bacnSitemapCrawl'
+
+    def __init__(self, sitemap_url, alternate_urls=True, *args, **kwargs):
+        super(bacnSitemapSpider, self).__init__(*args, **kwargs)
+        self.sitemap_urls = [sitemap_url]
+        self.alternate_urls = alternate_urls
+
+    def parse(self, response):
+        item = PageDetails()
+        images_all = len(response.xpath('/html/body//img'))
+        images_alt = len(response.xpath('/html/body//img[@alt!=""]'))
+        item['images'] = images_all
+        item['images_data'] = '{} alt set ({:.2%})'.format(images_alt, (images_alt/images_all))
+        links_all = len(response.xpath('/html/body//a[@href]'))
+        links_title = len(response.xpath('/html/body//a[@href][@title!=""]'))
+        item['links'] = links_all
+        item['links_data'] = '{} title set ({:.2%})'.format(links_title, (links_title/links_all))
+        item['header3'] = len(response.xpath('/html/body//h3'))
+        item['header2'] = len(response.xpath('/html/body//h2'))
+        item['header1'] = len(response.xpath('/html/body//h1'))
+        item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
+        item['title'] = response.xpath('//title/text()').extract_first()
+        item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
+        item['status'] = response.status
+        item['url'] = response.url
+        return item
+
+@click.command()
+@click.option('--url', '-u', required=True, help='Start URL')
+@click.option('--allowed', '-a', multiple=True, help='Allowed domains (e.g. www.example.com)')
+@click.option('--exclude', '-x', multiple=True, help='Exclude domains')
+@click.option('--outputformat', '-o', default='csv', type=click.Choice(['csv', 'xml', 'json']), help='Output format')
+@click.option('--outputfile', '-f', default='last_crawl', help='Output filename')
+@click.option('--sitemap', '-s', default=False, is_flag=True, help='Crawl via sitemap.xml (make sure the -u parameter points to a sitemap.xml or robots.txt URL)')
+def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap):
+    '''BacnScrpn: A command line SEO scraper.
+    '''
+
+    global settings
+
+    settings = bacnSettings(outputfile, outputformat)
+
+    if len(allowed) == 0 and sitemap is False:
+        click.confirm('Crawling without the allowed domains set will cause a crawl of every link on every page encountered. Are you sure you want to continue?', abort=True)
+
+    process = CrawlerProcess({
+        'USER_AGENT': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1)',
+        'ITEM_PIPELINES': { '__main__.OutputPipeline': 100}
+    })
+
+    if sitemap:
+        process.crawl(bacnSitemapSpider, sitemap_url=url)
+    else:
+        process.crawl(bacnSpider, start_url=url, allowed_domains=allowed, excluded_domains=exclude)
+
+    process.start() # the script will block here until the crawling is finished
+
+if __name__ == '__main__':
+    bacnScrapn()
