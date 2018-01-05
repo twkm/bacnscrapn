@@ -22,7 +22,9 @@ class PageDetails(Item):
     url= Field()
     status= Field()
     title= Field()
+    title_length= Field()
     description= Field()
+    description_length= Field()
     canonical= Field()
     images= Field()
     images_data= Field()
@@ -45,7 +47,7 @@ class OutputPipeline(object):
             else:
                 self.exporter = CsvItemExporter(self.file, include_headers_line=True)
             self.exporter.fields_to_export = [
-                'url', 'status', 'title', 'description', 'header1', 'images', 'images_data',
+                'url', 'status', 'title', 'title_length', 'description', 'description_length', 'header1', 'images', 'images_data',
                 'links', 'links_data', 'header2', 'header3', 'canonical'
             ]
             self.exporter.start_exporting()
@@ -84,7 +86,9 @@ class bacnSpider(CrawlSpider):
         item['header3'] = len(response.xpath('/html/body//h3'))
         item['header2'] = len(response.xpath('/html/body//h2'))
         item['header1'] = len(response.xpath('/html/body//h1'))
+        item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
         item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
+        item['title_length'] = len(response.xpath('//title/text()').extract_first())
         item['title'] = response.xpath('//title/text()').extract_first()
         item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
         item['status'] = response.status
@@ -113,7 +117,9 @@ class bacnSitemapSpider(SitemapSpider):
         item['header3'] = len(response.xpath('/html/body//h3'))
         item['header2'] = len(response.xpath('/html/body//h2'))
         item['header1'] = len(response.xpath('/html/body//h1'))
+        item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
         item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
+        item['title_length'] = len(response.xpath('//title/text()').extract_first())
         item['title'] = response.xpath('//title/text()').extract_first()
         item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
         item['status'] = response.status
