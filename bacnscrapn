@@ -7,6 +7,7 @@ from scrapy.item import Item, Field
 from scrapy.crawler import CrawlerProcess
 from scrapy.exporters import JsonItemExporter, CsvItemExporter, XmlItemExporter
 import click
+import re
 
 class bacnSettings(object):
     output_to_file = False
@@ -66,38 +67,53 @@ class OutputPipeline(object):
 
 class bacnSpider(CrawlSpider):
     name = 'bacnCrawl'
+    custom_settings = {
+        'HTTPERROR_ALLOW_ALL': True,
+    }
 
     def __init__(self, start_url, allowed_domains=(), excluded_domains=(), *args, **kwargs):
         super(bacnSpider, self).__init__(*args, **kwargs)
+
+        uri_exclusions = (
+            '.*\/tel:.*',
+            '.*\/mailto:.*',
+        )
+
         self.start_urls = [start_url]
-        self.rules = (Rule(LxmlLinkExtractor(allow=allowed_domains, deny_domains=excluded_domains), callback='parse_obj', follow=True),)
+        self.rules = (Rule(LxmlLinkExtractor(allow=allowed_domains, deny_domains=excluded_domains, deny=uri_exclusions), callback='parse_obj', follow=True),)
         self._compile_rules()
 
     def parse_obj(self, response):
         item = PageDetails()
-        images_all = len(response.xpath('/html/body//img'))
-        images_alt = len(response.xpath('/html/body//img[@alt!=""]'))
-        item['images'] = images_all
-        item['images_data'] = '{} alt set ({:.2%})'.format(images_alt, (images_alt/images_all))
-        links_all = len(response.xpath('/html/body//a[@href]'))
-        links_title = len(response.xpath('/html/body//a[@href][@title!=""]'))
-        item['links'] = links_all
-        item['links_data'] = '{} title set ({:.2%})'.format(links_title, (links_title/links_all))
-        item['header3'] = len(response.xpath('/html/body//h3'))
-        item['header2'] = len(response.xpath('/html/body//h2'))
-        item['header1'] = len(response.xpath('/html/body//h1'))
-        item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
-        item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
-        item['title_length'] = len(response.xpath('//title/text()').extract_first())
-        item['title'] = response.xpath('//title/text()').extract_first()
-        item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
-        item['status'] = response.status
-        item['url'] = response.url
+        if 199 < response.status < 400:
+            images_all = len(response.xpath('/html/body//img'))
+            images_alt = len(response.xpath('/html/body//img[@alt!=""]'))
+            item['images'] = images_all
+            item['images_data'] = '{} alt set ({:.2%})'.format(images_alt, (images_alt/images_all))
+            links_all = len(response.xpath('/html/body//a[@href]'))
+            links_title = len(response.xpath('/html/body//a[@href][@title!=""]'))
+            item['links'] = links_all
+            item['links_data'] = '{} title set ({:.2%})'.format(links_title, (links_title/links_all))
+            item['header3'] = len(response.xpath('/html/body//h3'))
+            item['header2'] = len(response.xpath('/html/body//h2'))
+            item['header1'] = len(response.xpath('/html/body//h1'))
+            item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
+            item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
+            item['title_length'] = len(response.xpath('//title/text()').extract_first())
+            item['title'] = response.xpath('//title/text()').extract_first()
+            item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
+            item['status'] = response.status
+            item['url'] = response.url
+        else:
+            item['status'] = response.status
+            item['url'] = response.url
         return item
 
 class bacnSitemapSpider(SitemapSpider):
-
     name = 'bacnSitemapCrawl'
+    custom_settings = {
+        'HTTPERROR_ALLOW_ALL': True,
+    }
 
     def __init__(self, sitemap_url, alternate_urls=True, *args, **kwargs):
         super(bacnSitemapSpider, self).__init__(*args, **kwargs)
@@ -106,24 +122,28 @@ class bacnSitemapSpider(SitemapSpider):
 
     def parse(self, response):
         item = PageDetails()
-        images_all = len(response.xpath('/html/body//img'))
-        images_alt = len(response.xpath('/html/body//img[@alt!=""]'))
-        item['images'] = images_all
-        item['images_data'] = '{} alt set ({:.2%})'.format(images_alt, (images_alt/images_all))
-        links_all = len(response.xpath('/html/body//a[@href]'))
-        links_title = len(response.xpath('/html/body//a[@href][@title!=""]'))
-        item['links'] = links_all
-        item['links_data'] = '{} title set ({:.2%})'.format(links_title, (links_title/links_all))
-        item['header3'] = len(response.xpath('/html/body//h3'))
-        item['header2'] = len(response.xpath('/html/body//h2'))
-        item['header1'] = len(response.xpath('/html/body//h1'))
-        item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
-        item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
-        item['title_length'] = len(response.xpath('//title/text()').extract_first())
-        item['title'] = response.xpath('//title/text()').extract_first()
-        item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
-        item['status'] = response.status
-        item['url'] = response.url
+        if 199 < response.status < 400:
+            images_all = len(response.xpath('/html/body//img'))
+            images_alt = len(response.xpath('/html/body//img[@alt!=""]'))
+            item['images'] = images_all
+            item['images_data'] = '{} alt set ({:.2%})'.format(images_alt, (images_alt/images_all))
+            links_all = len(response.xpath('/html/body//a[@href]'))
+            links_title = len(response.xpath('/html/body//a[@href][@title!=""]'))
+            item['links'] = links_all
+            item['links_data'] = '{} title set ({:.2%})'.format(links_title, (links_title/links_all))
+            item['header3'] = len(response.xpath('/html/body//h3'))
+            item['header2'] = len(response.xpath('/html/body//h2'))
+            item['header1'] = len(response.xpath('/html/body//h1'))
+            item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
+            item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
+            item['title_length'] = len(response.xpath('//title/text()').extract_first())
+            item['title'] = response.xpath('//title/text()').extract_first()
+            item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
+            item['status'] = response.status
+            item['url'] = response.url
+        else:
+            item['status'] = response.status
+            item['url'] = response.url
         return item
 
 @click.command()
