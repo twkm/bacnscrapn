@@ -97,11 +97,11 @@ class bacnSpider(CrawlSpider):
             item['header3'] = len(response.xpath('/html/body//h3'))
             item['header2'] = len(response.xpath('/html/body//h2'))
             item['header1'] = len(response.xpath('/html/body//h1'))
-            item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
-            item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
-            item['title_length'] = len(response.xpath('//title/text()').extract_first())
-            item['title'] = response.xpath('//title/text()').extract_first()
-            item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
+            item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first(default=''))
+            item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first(default='')
+            item['title_length'] = len(response.xpath('//title/text()').extract_first(default=''))
+            item['title'] = response.xpath('//title/text()').extract_first(default='')
+            item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first(default='')
             item['status'] = response.status
             item['url'] = response.url
         else:
@@ -134,11 +134,11 @@ class bacnSitemapSpider(SitemapSpider):
             item['header3'] = len(response.xpath('/html/body//h3'))
             item['header2'] = len(response.xpath('/html/body//h2'))
             item['header1'] = len(response.xpath('/html/body//h1'))
-            item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first())
-            item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first()
-            item['title_length'] = len(response.xpath('//title/text()').extract_first())
-            item['title'] = response.xpath('//title/text()').extract_first()
-            item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first()
+            item['description_length'] = len(response.xpath('/html/head/meta[@name="description"]/@content').extract_first(default=''))
+            item['description'] = response.xpath('/html/head/meta[@name="description"]/@content').extract_first(default='')
+            item['title_length'] = len(response.xpath('//title/text()').extract_first(default=''))
+            item['title'] = response.xpath('//title/text()').extract_first(default='')
+            item['canonical'] = response.xpath('/html/head/link[@rel="canonical"]/@href[last()]').extract_first(default='')
             item['status'] = response.status
             item['url'] = response.url
         else:
