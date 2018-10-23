@@ -13,10 +13,10 @@ class bacnSettings(object):
     output_to_file = False
     output_formats = ('csv','json','xml')
 
-    def __init__(self, output_filename='last_crawl', output_format='csv'):
+    def __init__(self, output_filename='last_crawl', output_format='csv', output_to_file=True):
         if output_format in self.output_formats:
             self.output_format = output_format
-            self.output_to_file = True
+            self.output_to_file = output_to_file
             self.output_file = output_filename
 
 class PageDetails(Item):
@@ -64,6 +64,24 @@ class OutputPipeline(object):
         if settings.output_to_file:
             self.exporter.export_item(item)
         return item
+
+class bacnWarmer(CrawlSpider):
+    name = 'bacnCrawlWarmer'
+    custom_settings = {
+        'HTTPERROR_ALLOW_ALL': True,
+    }
+
+    def __init__(self, start_url, allowed_domains=(), excluded_domains=(), *args, **kwargs):
+        super(bacnWarmer, self).__init__(*args, **kwargs)
+
+        uri_exclusions = (
+            '.*\/tel:.*',
+            '.*\/mailto:.*',
+        )
+
+        self.start_urls = [start_url]
+        self.rules = (Rule(LxmlLinkExtractor(allow=allowed_domains, deny_domains=excluded_domains, deny=uri_exclusions), follow=True),)
+        self._compile_rules()
 
 class bacnSpider(CrawlSpider):
     name = 'bacnCrawl'
@@ -153,12 +171,13 @@ class bacnSitemapSpider(SitemapSpider):
 @click.option('--outputformat', '-o', default='csv', type=click.Choice(['csv', 'xml', 'json']), help='Output format')
 @click.option('--outputfile', '-f', default='last_crawl', help='Output filename')
 @click.option('--sitemap', '-s', default=False, is_flag=True, help='Crawl via sitemap.xml (make sure the -u parameter points to a sitemap.xml or robots.txt URL)')
-def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap):
+@click.option('--warmer', '-w', default=False, is_flag=True, help='Crawl each page found, but do nothing with the data. Useful as a cache warmer.')
+
+def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap, warmer):
     '''BacnScrpn: A command line SEO scraper.
     '''
 
     global settings
-
     settings = bacnSettings(outputfile, outputformat)
 
     if len(allowed) == 0 and sitemap is False:
@@ -169,7 +188,10 @@ def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap):
         'ITEM_PIPELINES': { '__main__.OutputPipeline': 100}
     })
 
-    if sitemap:
+    if warmer:
+        settings = bacnSettings(outputfile, outputformat, output_to_file=False)
+        process.crawl(bacnWarmer, start_url=url, allowed_domains=allowed, excluded_domains=exclude)
+    elif sitemap:
         process.crawl(bacnSitemapSpider, sitemap_url=url)
     else:
         process.crawl(bacnSpider, start_url=url, allowed_domains=allowed, excluded_domains=exclude)
