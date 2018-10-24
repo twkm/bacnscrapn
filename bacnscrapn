@@ -12,9 +12,13 @@ import re
 class bacnSettings(object):
     output_to_file = False
     output_formats = ('csv','json','xml')
+    warmer = False
+    errors = False
 
-    def __init__(self, output_filename='last_crawl', output_format='csv', output_to_file=True):
-        if output_format in self.output_formats:
+    def __init__(self, output_filename='last_crawl', output_format='csv', output_to_file=True, warmer=False, errors=False):
+        self.warmer = warmer
+        self.errors = errors
+        if output_format in self.output_formats and output_to_file is True:
             self.output_format = output_format
             self.output_to_file = output_to_file
             self.output_file = output_filename
@@ -35,6 +39,11 @@ class PageDetails(Item):
     header2= Field()
     header3= Field()
 
+class BrokenPageDetails(Item):
+    url= Field()
+    status= Field()
+    referers= Field()
+
 class OutputPipeline(object):
 
     def open_spider(self, spider):
@@ -47,10 +56,16 @@ class OutputPipeline(object):
                 self.exporter = XmlItemExporter(self.file)
             else:
                 self.exporter = CsvItemExporter(self.file, include_headers_line=True)
-            self.exporter.fields_to_export = [
-                'url', 'status', 'title', 'title_length', 'description', 'description_length', 'header1', 'images', 'images_data',
-                'links', 'links_data', 'header2', 'header3', 'canonical'
-            ]
+            if settings.warmer:
+                self.exporter.fields_to_export = [
+                    'url', 'status', 'referers'
+                ]
+            else:
+                self.exporter.fields_to_export = [
+                    'url', 'status', 'title', 'title_length', 'description', 'description_length', 'header1', 'images', 'images_data',
+                    'links', 'links_data', 'header2', 'header3', 'canonical'
+                ]
+
             self.exporter.start_exporting()
 
     def close_spider(self, spider):
@@ -60,7 +75,9 @@ class OutputPipeline(object):
             self.file.close()
 
     def process_item(self, item, spider):
-        global settings
+        global settings, error_url_referrers
+        if settings.warmer:
+            item['referers'] = error_url_referrers[item['url']]
         if settings.output_to_file:
             self.exporter.export_item(item)
         return item
@@ -68,7 +85,7 @@ class OutputPipeline(object):
 class bacnWarmer(CrawlSpider):
     name = 'bacnCrawlWarmer'
     custom_settings = {
-        'HTTPERROR_ALLOW_ALL': True,
+        'HTTPERROR_ALLOW_ALL': True
     }
 
     def __init__(self, start_url, allowed_domains=(), excluded_domains=(), *args, **kwargs):
@@ -80,13 +97,46 @@ class bacnWarmer(CrawlSpider):
         )
 
         self.start_urls = [start_url]
-        self.rules = (Rule(LxmlLinkExtractor(allow=allowed_domains, deny_domains=excluded_domains, deny=uri_exclusions), follow=True),)
+        self.rules = (Rule(LxmlLinkExtractor(allow=allowed_domains, deny_domains=excluded_domains, deny=uri_exclusions, unique=False), callback='parse_obj', follow=True, process_request='parse_request'),)
         self._compile_rules()
+
+    def parse_request(self, request):
+        global settings, error_urls, error_url_referrers, urls_found
+
+        if settings.errors:
+            if request.url in error_urls:
+                return request
+            else:
+                if request.url in urls_found:
+                    return None
+                else:
+                    return request
+        else:
+            if request.url in urls_found:
+                return None
+            else:
+                return request
+
+    def parse_obj(self, response):
+        global error_url_referrers, error_urls
+        item = BrokenPageDetails()
+        if response.status > 399:
+            item['status'] = response.status
+            item['url'] = response.url
+
+            referrer = '{}'.format(response.request.headers.get('Referer').decode("utf-8"))
+            if response.url in error_urls:
+                error_url_referrers[response.url] += '|{:s}'.format(referrer)
+            else:
+                error_urls.append(response.url)
+                error_url_referrers[response.url] = referrer
+
+            return item
 
 class bacnSpider(CrawlSpider):
     name = 'bacnCrawl'
     custom_settings = {
-        'HTTPERROR_ALLOW_ALL': True,
+        'HTTPERROR_ALLOW_ALL': True
     }
 
     def __init__(self, start_url, allowed_domains=(), excluded_domains=(), *args, **kwargs):
@@ -130,7 +180,7 @@ class bacnSpider(CrawlSpider):
 class bacnSitemapSpider(SitemapSpider):
     name = 'bacnSitemapCrawl'
     custom_settings = {
-        'HTTPERROR_ALLOW_ALL': True,
+        'HTTPERROR_ALLOW_ALL': True
     }
 
     def __init__(self, sitemap_url, alternate_urls=True, *args, **kwargs):
@@ -165,15 +215,16 @@ class bacnSitemapSpider(SitemapSpider):
         return item
 
 @click.command()
-@click.option('--url', '-u', required=True, help='Start URL')
-@click.option('--allowed', '-a', multiple=True, help='Allowed domains (e.g. www.example.com)')
-@click.option('--exclude', '-x', multiple=True, help='Exclude domains')
-@click.option('--outputformat', '-o', default='csv', type=click.Choice(['csv', 'xml', 'json']), help='Output format')
+@click.option('--url', '-u', required=True, help='Start URL (with protocol, e.g. http://www.example.com')
+@click.option('--allowed', '-a', multiple=True, help='Allowed domain to crawl (e.g. www.example.com), can specify multiple domains')
+@click.option('--exclude', '-x', multiple=True, help='Exclude domains, can specify multiple domains')
+@click.option('--outputformat', '-o', default='csv', type=click.Choice(['csv', 'xml', 'json']), help='Output file format')
 @click.option('--outputfile', '-f', default='last_crawl', help='Output filename')
-@click.option('--sitemap', '-s', default=False, is_flag=True, help='Crawl via sitemap.xml (make sure the -u parameter points to a sitemap.xml or robots.txt URL)')
+@click.option('--sitemap', '-s', default=False, is_flag=True, help='Crawl via sitemap.xml (-u parameter must point to a sitemap.xml or robots.txt URL)')
 @click.option('--warmer', '-w', default=False, is_flag=True, help='Crawl each page found, but do nothing with the data. Useful as a cache warmer.')
+@click.option('--errors', '-e', default=False, is_flag=True, help='When used with --warmer option, output errors to file in --outputfile')
 
-def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap, warmer):
+def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap, warmer, errors):
     '''BacnScrpn: A command line SEO scraper.
     '''
 
@@ -188,8 +239,15 @@ def bacnScrapn(url, allowed, exclude, outputformat, outputfile, sitemap, warmer)
         'ITEM_PIPELINES': { '__main__.OutputPipeline': 100}
     })
 
-    if warmer:
-        settings = bacnSettings(outputfile, outputformat, output_to_file=False)
+    if warmer is True:
+        global error_urls, error_url_referrers, urls_found
+        error_urls = []
+        urls_found = []
+        error_url_referrers = {}
+        if errors is True:
+            settings = bacnSettings(outputfile, outputformat, output_to_file=True, warmer=True, errors=True)
+        else:
+            settings = bacnSettings(outputfile, outputformat, output_to_file=False, warmer=True)
         process.crawl(bacnWarmer, start_url=url, allowed_domains=allowed, excluded_domains=exclude)
     elif sitemap:
         process.crawl(bacnSitemapSpider, sitemap_url=url)
