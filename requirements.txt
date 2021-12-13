@@ -8,7 +8,7 @@ cssselect==1.1.0
 hyperlink==21.0.0
 idna==3.2
 incremental==21.3.0
-lxml==4.6.3
+lxml==4.6.5
 parsel==1.6.0
 Protego==0.1.16
 pyasn1==0.4.8
